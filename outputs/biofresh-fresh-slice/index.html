@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="Cortá al vuelo los ingredientes frescos de Biofresh en Fresh Slice.">
+  <title>Fresh Slice · Inspirado en Biofresh</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app">
+    <section class="game-screen" id="gameScreen" aria-label="Fresh Slice" aria-hidden="true" inert>
+      <div class="arena" id="arena">
+        <canvas id="gameCanvas" aria-label="Área de juego: deslizá para cortar ingredientes" aria-describedby="combo"></canvas>
+        <div class="brand game-brand" aria-hidden="true"><span>BIOFRESH<sup>®</sup></span><small>SUPER PREMIUM NATURAL</small></div>
+      </div>
+      <div class="game-hud">
+        <div class="scorebar" role="status" aria-label="Marcador">
+          <div class="score-item"><span class="score-label">PUNTOS</span><strong id="score">000</strong></div>
+          <div class="score-item"><span class="score-label">TIEMPO</span><strong id="time">35<span class="unit">s</span></strong></div>
+          <div class="score-item life-item"><span class="score-label">VIDAS</span><strong id="lives" aria-label="3 vidas">♥ ♥ ♥</strong></div>
+        </div>
+        <div class="game-controls">
+          <button class="icon-button" id="soundButton" type="button" aria-label="Silenciar sonido" title="Silenciar sonido"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm13 0c1.1.9 1.6 1.9 1.6 3S18.1 14.1 17 15m2.5-8.5a7.7 7.7 0 0 1 0 11"/></svg></button>
+          <button class="icon-button" id="fullscreenButton" type="button" aria-label="Pantalla completa" title="Pantalla completa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/></svg></button>
+          <button class="icon-button" id="menuButton" type="button" aria-label="Volver al inicio" title="Volver al inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h12"/></svg></button>
+        </div>
+      </div>
+      <div class="game-tip">DESLIZÁ PARA CORTAR <span aria-hidden="true">↗</span></div>
+      <button class="pause-button" id="pauseButton" type="button" aria-label="Pausar juego" title="Pausar juego" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg></button>
+      <span class="sr-only" id="combo" role="status" aria-live="polite"></span>
+      <div class="overlay hidden" id="overlay" role="dialog" aria-modal="true" aria-labelledby="overlayTitle" aria-hidden="true" inert>
+        <div class="overlay-card">
+          <div class="overlay-spark" aria-hidden="true">✳</div>
+          <span class="overlay-kicker" id="overlayKicker">UN RESPIRO NATURAL</span>
+          <h2 id="overlayTitle">En pausa.</h2>
+          <p id="overlayText">Cuando quieras, seguí cortando ingredientes frescos.</p>
+          <dl class="result-stats" id="resultStats" aria-label="Resumen de la ronda" hidden>
+            <div>
+              <dt>Ingredientes cortados</dt>
+              <dd id="resultIngredients">0</dd>
+            </div>
+            <div>
+              <dt>Mejor racha</dt>
+              <dd><span id="resultStreak">0</span><small id="resultStreakUnit">cortes seguidos</small></dd>
+            </div>
+          </dl>
+          <p class="save-status" id="saveStatus" role="status" aria-live="polite" hidden></p>
+          <button class="primary-button" id="overlayButton" type="button">Continuar <span aria-hidden="true">↗</span></button>
+          <button class="text-button" id="overlayMenu" type="button">Volver al inicio</button>
+          <span class="overlay-foot">MEJOR PUNTAJE: <strong id="best">000</strong></span>
+        </div>
+      </div>
+      <div class="celebration" id="celebration" aria-hidden="true"></div>
+    </section>
+
+    <section class="entry-screen" id="entryPanel" aria-label="Cómo jugar a Fresh Slice">
+      <header class="entry-header">
+        <a class="brand" href="https://biofreshpet.com.br/pt" target="_blank" rel="noopener noreferrer" aria-label="Sitio oficial de Biofresh"><span>BIOFRESH<sup>®</sup></span><small>SUPER PREMIUM NATURAL</small></a>
+        <span class="game-name">FRESH SLICE <i aria-hidden="true">✳</i></span>
+      </header>
+      <section class="registration-panel" id="registrationPanel" aria-labelledby="registrationHeading">
+        <div class="ingredients-intro registration-intro">
+          <div class="eyebrow"><span class="dot"></span> 01 / ANTES DE EMPEZAR</div>
+          <h1 id="registrationHeading" tabindex="-1">Tu nombre.<br><em>Tu próxima marca.</em></h1>
+          <p>Completá tus datos para participar y registrar tus resultados en Fresh Slice.</p>
+          <span class="registration-signature">BIOFRESH <span aria-hidden="true">✳</span> FRESH SLICE</span>
+        </div>
+        <form class="registration-form" id="participantForm" novalidate>
+          <span class="form-kicker">EMPEZÁ POR VOS</span>
+          <h2>¡Qué bueno verte!</h2>
+          <label for="participantName">Nombre <span aria-hidden="true">*</span></label>
+          <input id="participantName" name="name" type="text" autocomplete="name" minlength="2" maxlength="80" placeholder="¿Cómo te llamás?" required aria-describedby="participantNameError">
+          <small class="field-error" id="participantNameError"></small>
+          <label for="participantPhone">Número de celular <span aria-hidden="true">*</span></label>
+          <input id="participantPhone" name="tel" type="tel" autocomplete="tel" inputmode="tel" maxlength="25" placeholder="Ej.: 099 123 456" required aria-describedby="participantPhoneHint participantPhoneError">
+          <small class="field-hint" id="participantPhoneHint">Uruguay por defecto. Para otro país, agregá su código: +54, +55…</small>
+          <small class="field-error" id="participantPhoneError"></small>
+          <p class="registration-notice">Registraremos tu nombre, celular y resultados para identificar tu participación en los juegos.</p>
+          <p class="registration-status" id="registrationStatus" role="status" aria-live="polite"></p>
+          <button class="primary-button" id="registrationContinue" type="submit">Continuar <span aria-hidden="true">→</span></button>
+          <small class="preview-notice" id="registrationPreview" hidden>Modo de prueba: los datos no se envían.</small>
+        </form>
+      </section>
+      <div class="tutorial-flow" id="tutorialFlow" hidden>
+      <nav class="tutorial-progress" aria-label="Pasos para aprender a jugar">
+        <button class="tutorial-step is-current" id="tutorialStep1" type="button" aria-current="step" aria-controls="tutorialPanel1"><span class="step-number">01</span><span>Ingredientes</span></button>
+        <span class="step-connector" aria-hidden="true"></span>
+        <button class="tutorial-step" id="tutorialStep2" type="button" aria-current="false" aria-controls="tutorialPanel2"><span class="step-number">02</span><span>Cómo cortar</span></button>
+        <span class="step-connector" aria-hidden="true"></span>
+        <button class="tutorial-step" id="tutorialStep3" type="button" aria-current="false" aria-controls="tutorialPanel3"><span class="step-number">03</span><span>Tu desafío</span></button>
+      </nav>
+      <div class="tutorial-stage">
+        <section class="entry-content tutorial-panel" id="tutorialPanel1" aria-labelledby="tutorialHeading1">
+          <div class="ingredients-intro">
+            <div class="eyebrow"><span class="dot"></span> 01 / CONOCÉ LOS INGREDIENTES</div>
+            <h1 id="tutorialHeading1" tabindex="-1">Natural de<br><em>verdad.</em></h1>
+            <p>Vas a cortar frutas, verduras, carnes y pescados que figuran entre los ingredientes y variedades de Biofresh. ¡Conocé a los protagonistas!</p>
+            <details class="ingredient-sources"><summary>De la receta al juego <span aria-hidden="true">↗</span></summary>
+              <a class="source-main" href="https://biofreshpet.com.br/pt/por-que-seu-pet-merece-biofresh" target="_blank" rel="noopener noreferrer">Ver los ingredientes de Biofresh <span aria-hidden="true">↗</span></a>
+              <div class="source-links">También consultá <a href="https://biofreshpet.com.br/pt/caes/cao-adulto-mini-e-pequeno-lombo-e-abacaxi" target="_blank" rel="noopener noreferrer">lomo y piña ↗</a> y la <a href="https://www.petlove.com.br/racao-seca-biofresh-mix-de-carne-frutas-legumes-e-ervas-frescas-caes-adultos-de-racas-medias/p" target="_blank" rel="noopener noreferrer">composición detallada ↗</a>.</div>
+            </details>
+            <details class="photo-credits"><summary>Imágenes y créditos</summary><p>Serie fotográfica retocada con IA: luz, color, composición y fondo transparente. Fuentes fotográficas de referencia:</p><ul id="photoCredits"></ul></details>
+          </div>
+          <div class="ingredient-grid" id="ingredientGrid" aria-label="Ingredientes del juego"></div>
+        </section>
+        <section class="entry-content tutorial-panel" id="tutorialPanel2" aria-labelledby="tutorialHeading2" hidden>
+          <div class="ingredients-intro">
+            <div class="eyebrow"><span class="dot"></span> 02 / UN GESTO, MUCHA FRESCURA</div>
+            <h2 id="tutorialHeading2" tabindex="-1">Deslizá<br>y <em>cortá.</em></h2>
+            <p>Los ingredientes saltan desde abajo. Pasá sobre ellos antes de que vuelvan a caer.</p>
+            <div class="gesture-instructions">
+              <div><span class="gesture-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="6"/><path d="M12 2v7M6 9h12"/></svg></span><p><strong>Con mouse</strong>Mantené apretado el botón y arrastrá sobre los alimentos.</p></div>
+              <div><span class="gesture-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4M9 13l6-6m-4 0h4v4"/></svg></span><p><strong>Con el dedo</strong>Deslizá sobre los alimentos en la pantalla.</p></div>
+            </div>
+          </div>
+          <div class="slice-demo" role="img" aria-label="Un trazo ascendente cruza una manzana, una zanahoria y una piña: arrastrá sobre los ingredientes para cortarlos.">
+            <span class="demo-caption">UN TRAZO. VARIOS CORTES.</span>
+            <canvas class="demo-food demo-apple" id="tutorialFruit1" width="220" height="220" aria-hidden="true"></canvas>
+            <canvas class="demo-food demo-carrot" id="tutorialFruit2" width="220" height="220" aria-hidden="true"></canvas>
+            <canvas class="demo-food demo-pineapple" id="tutorialFruit3" width="220" height="220" aria-hidden="true"></canvas>
+            <svg class="demo-trail" viewBox="0 0 600 400" aria-hidden="true"><path class="demo-trail-glow" d="M83 310C210 330 300 102 506 109"/><path class="demo-trail-line" d="M83 310C210 330 300 102 506 109"/><path class="demo-arrow" d="m485 93 22 16-22 18"/></svg>
+            <span class="demo-pointer" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="m7 3 2 23 6-7 5 10 5-3-5-10 9-1Z"/></svg></span>
+            <span class="demo-tip">Mantené y arrastrá <span aria-hidden="true">↗</span></span>
+          </div>
+        </section>
+        <section class="entry-content tutorial-panel" id="tutorialPanel3" aria-labelledby="tutorialHeading3" hidden>
+          <div class="ingredients-intro">
+            <div class="eyebrow"><span class="dot"></span> 03 / TU DESAFÍO FRESCO</div>
+            <h2 id="tutorialHeading3" tabindex="-1">Cortá fresco.<br><em>Sumá puntos.</em></h2>
+            <p>Cortá todos los ingredientes que puedas. Encadená cortes rápidos para sumar puntos extra y superar tu récord.</p>
+            <div class="challenge-note"><span aria-hidden="true">✳</span><p>Tenés <strong>35 segundos</strong> para que aparezcan ingredientes. Cuando el reloj llegue a 0, terminá de cortar los que queden en pantalla.</p></div>
+          </div>
+          <div class="challenge-rules" aria-label="Reglas de la partida">
+            <div class="rule-card"><span class="rule-value">10<small>PTS</small></span><div><h3>Cada corte suma</h3><p>Ganás 10 puntos por ingrediente. Los cortes seguidos dan puntos extra.</p></div></div>
+            <div class="rule-card"><span class="rule-value">35<small>SEG</small></span><div><h3>35 segundos de frescura</h3><p>El reloj empieza al tocar «Jugar ahora». Cuando marque 0, terminá los ingredientes que sigan en pantalla.</p></div></div>
+            <div class="rule-card"><span class="rule-value rule-hearts" aria-hidden="true">♥ ♥ ♥</span><div><h3>Tenés 3 vidas</h3><p>Si un ingrediente cae sin que lo cortes, perdés una vida.</p></div></div>
+            <div class="rule-card"><span class="rule-value rule-bonus" aria-hidden="true">✦</span><div><h3>Bolsa sorpresa</h3><p>Aparece una bolsa Biofresh en cada partida. Cortala y, durante 4 segundos, volvé a cortarla todas las veces que quieras.</p></div></div>
+          </div>
+        </section>
+      </div>
+      <div class="entry-actions">
+        <div class="tutorial-footer-info"><button class="tutorial-back" id="entryBack" type="button" disabled><span aria-hidden="true">←</span> Atrás</button><span class="tutorial-status" id="tutorialStatus" role="status" aria-live="polite">Paso 1 de 3</span><button class="change-player" id="changeParticipant" type="button" hidden>Cambiar participante</button></div>
+        <div class="entry-record"><span>MEJOR PUNTAJE</span><strong id="entryBest">000</strong></div>
+        <div class="play-block"><button class="primary-button" id="entryNext" type="button">Siguiente <span aria-hidden="true">→</span></button><button class="primary-button" id="heroPlay" type="button" disabled hidden>Cargando fotos…</button><small class="photo-status" id="photoStatus" role="status" hidden></small></div>
+      </div>
+      </div>
+    </section>
+  </main>
+  <script src="photos.js"></script>
+  <script src="sounds.js"></script>
+  <script src="platform-config.js"></script>
+  <script src="platform-sdk.js"></script>
+  <script src="registration.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

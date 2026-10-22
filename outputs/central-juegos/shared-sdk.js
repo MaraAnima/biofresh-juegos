@@ -1,0 +1,111 @@
+/* GameHub v1. Recepción confirmada y una cola por pestaña; no transmite datos por URL. */
+(function(root){
+  'use strict';
+  const CHANNEL='gamehub.v1',TTL=6*60*60*1000;
+  const uuid=()=>root.crypto?.randomUUID?.()||'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const n=Math.random()*16|0;return(c==='x'?n:(n&3|8)).toString(16)});
+  function name(value){
+    const result=String(value||'').trim().replace(/\s+/g,' ');
+    if(result.length<2||result.length>80||/[\u0000-\u001f\u007f]/.test(result))throw new Error('Ingresá tu nombre, de 2 a 80 caracteres.');
+    return result;
+  }
+  function phone(value,callingCode='598'){
+    let result=String(value||'').trim().replace(/[\s().-]/g,'');
+    if(result.startsWith('00'))result='+'+result.slice(2);
+    if(!result.startsWith('+')&&/^\d+$/.test(result)){
+      if(result.startsWith(callingCode)&&result.length>=11)result='+'+result;
+      else result='+'+callingCode+result.replace(/^0/,'');
+    }
+    if(!/^\+[1-9]\d{7,14}$/.test(result))throw new Error('Ingresá un celular válido. Podés usar el código de país, por ejemplo +598.');
+    return result;
+  }
+  const trustedOrigin=origin=>/^https:\/\/(?:script\.google\.com|script\.googleusercontent\.com|[a-z0-9-]+-script\.googleusercontent\.com)$/.test(origin);
+  class Client{
+    constructor(config,options={}){
+      this.config=Object.assign({},config);this.receipts=new Map();this.pending=new Map();this.queue=[];
+      this.preview=!!config.allowPreview&&!config.endpoint&&!config.gameKey;
+      this.configured=/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(config.endpoint||'')&&!!config.gameKey;
+      this.transport=options.transport;this.storage=options.storage;
+      if(this.storage===undefined){try{this.storage=root.sessionStorage;}catch(_){this.storage=null;}}
+      this.storageKey='gamehub.pending.v1.'+config.gameId;
+      try{this.queue=JSON.parse(this.storage?.getItem(this.storageKey)||'[]').filter(x=>x.queuedAt>Date.now()-TTL).slice(0,80);}catch(_){this.queue=[];}
+      this._save();
+      if(root.addEventListener){
+        root.addEventListener('message',e=>this._message(e));
+        root.addEventListener('online',()=>this.flush().catch(()=>{}));
+      }
+    }
+    event(type,details){
+      return Object.assign({schemaVersion:1,eventId:uuid(),type,occurredAt:new Date().toISOString(),brandId:this.config.brandId,brandName:this.config.brandName,gameId:this.config.gameId,gameName:this.config.gameName,gameVersion:this.config.gameVersion||'1.0.0',gameKey:this.config.gameKey},details);
+    }
+    _save(){try{this.storage?.setItem(this.storageKey,JSON.stringify(this.queue));}catch(_){/* La recepción confirmada sigue funcionando sin almacenamiento local. */}}
+    async send(event){
+      if(this.preview)return{ok:false,preview:true,eventId:event.eventId};
+      if(!this.configured)throw new Error('La conexión central todavía no está configurada.');
+      if(this.receipts.has(event.eventId))return this.receipts.get(event.eventId);
+      if(!this.queue.some(x=>x.event.eventId===event.eventId)){
+        if(this.queue.length>=80)throw new Error('Hay envíos pendientes. Volvé a intentar cuando se restablezca la conexión.');
+        this.queue.push({queuedAt:Date.now(),event:JSON.parse(JSON.stringify(event))});this._save();
+      }
+      await this.flush();
+      return this.receipts.get(event.eventId)||{ok:false,pending:true,eventId:event.eventId};
+    }
+    async flush(){
+      if(!this.configured||!this.queue.length)return;
+      if(this.flushing)return this.flushing;
+      this.flushing=(async()=>{
+        while(this.queue.length){
+          const item=this.queue[0];
+          if(item.queuedAt<Date.now()-TTL){this.receipts.set(item.event.eventId,{ok:false,eventId:item.event.eventId,error:{code:'EXPIRED',message:'El envío pendiente venció.',retryable:false}});this.queue.shift();this._save();continue;}
+          const response=this.transport?await this.transport(item.event):await this._request(item.event);
+          if(!response||response.eventId!==item.event.eventId||typeof response.ok!=='boolean')throw new Error('No se pudo confirmar el guardado.');
+          if(!response.ok&&response.error?.retryable!==false)throw new Error('El servidor no pudo guardar los datos. Intentá nuevamente.');
+          this.receipts.set(item.event.eventId,response);this.queue.shift();this._save();
+          if(this.receipts.size>100)this.receipts.delete(this.receipts.keys().next().value);
+        }
+      })();
+      try{return await this.flushing;}finally{this.flushing=null;}
+    }
+    async _connect(){
+      if(this.bridgeWindow)return;
+      if(this.connecting)return this.connecting;
+      this.nonce=uuid();
+      this.connecting=new Promise((resolve,reject)=>{
+        this.resolveConnection=resolve;
+        this.connectTimer=root.setTimeout(()=>{
+          this.frame?.remove();this.frame=null;this.connecting=null;
+          reject(new Error('No se pudo conectar con el registro. Verificá tu conexión e intentá otra vez.'));
+        },18000);
+        const frame=root.document.createElement('iframe');this.frame=frame;
+        frame.hidden=true;frame.title='Conexión con el registro de participantes';frame.setAttribute('aria-hidden','true');
+        // MessageEvent usa el origen de la ventana; location.origin puede ser file://.
+        const localFile=root.location.protocol==='file:'||root.location.origin==='file://';
+        const parentOrigin=localFile?'null':typeof root.origin==='string'?root.origin:root.location.origin;
+        const url=new URL(this.config.endpoint);url.searchParams.set('view','bridge');url.searchParams.set('nonce',this.nonce);url.searchParams.set('parentOrigin',parentOrigin);
+        frame.src=url.href;root.document.body.appendChild(frame);
+      });
+      return this.connecting;
+    }
+    _message(event){
+      const message=event.data;
+      if(!message||message.channel!==CHANNEL||message.nonce!==this.nonce||!trustedOrigin(event.origin))return;
+      if(message.type==='ready'&&!this.bridgeWindow){
+        this.bridgeWindow=event.source;this.bridgeOrigin=event.origin;root.clearTimeout(this.connectTimer);
+        this.bridgeWindow.postMessage({channel:CHANNEL,type:'init',nonce:this.nonce},this.bridgeOrigin);
+        this.resolveConnection?.();return;
+      }
+      if(event.source!==this.bridgeWindow||event.origin!==this.bridgeOrigin||message.type!=='ack')return;
+      const request=this.pending.get(message.requestId);if(!request)return;
+      root.clearTimeout(request.timer);this.pending.delete(message.requestId);request.resolve(message.response);
+    }
+    async _request(event){
+      await this._connect();
+      const requestId=uuid();
+      return new Promise((resolve,reject)=>{
+        const timer=root.setTimeout(()=>{this.pending.delete(requestId);reject(new Error('El guardado está pendiente. Volvé a intentar.'));},22000);
+        this.pending.set(requestId,{resolve,timer});
+        this.bridgeWindow.postMessage({channel:CHANNEL,type:'event',nonce:this.nonce,requestId,payload:event},this.bridgeOrigin);
+      });
+    }
+  }
+  root.GameHub={Client,uuid,normalizeName:name,normalizePhone:phone,version:'1.0.1'};
+})(typeof window!=='undefined'?window:globalThis);

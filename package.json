@@ -1,0 +1,23 @@
+{
+  "name": "biofresh-juegos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fresh Slice y central de juegos con Google Sheets y Apps Script",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaraAnima/biofresh-juegos.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node work/build.cjs",
+    "test": "node work/run-tests.cjs",
+    "test:central": "node work/test-central-platform.cjs",
+    "test:aura": "node work/check-bag-aura.cjs"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "0.1.100"
+  }
+}

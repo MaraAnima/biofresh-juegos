@@ -1,0 +1,23 @@
+<!doctype html><html><head><base target="_top"></head><body><script>
+(()=>{
+  'use strict';
+  const channel='gamehub.v1',nonce=<?!= JSON.stringify(nonce) ?>,parentOrigin=<?!= JSON.stringify(parentOrigin) ?>;
+  let client=null;
+  function announce(){
+    let ancestor=window.parent;
+    for(let level=0;level<10&&ancestor;level++){
+      ancestor.postMessage({channel,type:'ready',nonce},'*');
+      if(ancestor===ancestor.parent)break;ancestor=ancestor.parent;
+    }
+  }
+  const timer=setInterval(announce,500);announce();
+  window.addEventListener('message',event=>{
+    const data=event.data;
+    if(!data||data.channel!==channel||data.nonce!==nonce||event.origin!==parentOrigin||(client&&event.source!==client))return;
+    if(data.type==='init'){client=event.source;clearInterval(timer);return;}
+    if(data.type!=='event'||!client||typeof data.requestId!=='string')return;
+    const reply=response=>client.postMessage({channel,type:'ack',nonce,requestId:data.requestId,response},parentOrigin==='null'?'*':parentOrigin);
+    google.script.run.withSuccessHandler(reply).withFailureHandler(()=>reply({ok:false,eventId:data.payload&&data.payload.eventId||'',error:{code:'SERVER_UNAVAILABLE',retryable:true}})).recibirEvento(data.payload);
+  });
+})();
+</script></body></html>
