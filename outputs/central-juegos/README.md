@@ -4,7 +4,11 @@ El paquete contiene el servidor, el puente de comunicación, un SDK común y el 
 
 **Conexión verificada en la planilla para ambos juegos.** Se recibieron registro, inicio y cierre de una prueba técnica de Puzzle y de una ronda jugada de Fresh Slice. En Fresh Slice, el resultado de Sheets coincidió con la pantalla: **1435 puntos, 54 ingredientes y mejor racha de 11**. La ronda quedó en una sola fila de Partidas, con el mismo participante, sesión e ID de partida que sus eventos. Las validaciones del servidor, SDK y formulario también pasaron en pruebas locales.
 
-El **SDK 1.0.1** corrige el cálculo del origen al abrir juegos desde archivos locales. Se usa el origen de la ventana y se normaliza `file:` a `null`, manteniendo la verificación del origen de Google, el nonce y la ventana que confirma el guardado. Referencia: [Window.origin](https://developer.mozilla.org/en-US/docs/Web/API/Window/origin). La actualización está publicada en el mismo endpoint.
+El **SDK 1.1.0** conserva la corrección del origen de los archivos locales e incorpora conexión anticipada, prioridad para inscripciones aún sin iniciar y confirmaciones por evento. Una respuesta ya recibida no espera a que termine toda la cola. `client.onReceipt(callback)` permite actualizar el estado cuando un reintento automático se confirma. Se mantienen el origen de Google, el nonce y la ventana verificada. Referencia: [Window.origin](https://developer.mozilla.org/en-US/docs/Web/API/Window/origin).
+
+El servidor **1.1.0** agrupa las lecturas antes de escribir y guarda en caché solo pistas numéricas de filas. Cada pista se verifica contra la clave de la fila; marca, clave pública y estado activo se leen de Sheets en cada solicitud, así que desactivar un juego tiene efecto sin esperar a que venza una caché de permisos. Una caché ausente o desactualizada no impide guardar ni duplica participantes. Esta mejora sigue las [recomendaciones de rendimiento de Google](https://developers.google.com/apps-script/guides/support/best-practices).
+
+Esto reduce trabajo y espera visible; no garantiza escrituras instantáneas en Google. No se midió aún la latencia real de esta actualización ni su capacidad con concurrencia alta.
 
 ## Publicación inicial
 
@@ -78,7 +82,7 @@ Los envíos no confirmados se guardan en **sessionStorage** de la pestaña con u
 
 ## Fresh Slice
 
-El primer paso pide nombre y celular, ambos obligatorios. Con el país por defecto Uruguay, `099 123 456` se normaliza a formato `+598…`; para otros países, se ingresa el prefijo internacional. Es una validación de formato, no una verificación por SMS.
+El primer paso pide nombre y celular, ambos obligatorios. Las instrucciones se abren inmediatamente después de validar esos campos, mientras llega la confirmación de registro. La ronda solo se habilita cuando la central confirma el registro; si falla, vuelve al formulario conservando los datos para reintentar. Con el país por defecto Uruguay, `099 123 456` se normaliza a formato `+598…`; para otros países, se ingresa el prefijo internacional. Es una validación de formato, no una verificación por SMS.
 
 El botón **Cambiar participante** limpia el formulario y crea una sesión nueva. Las repeticiones dentro de una misma participación conservan al participante y generan otra partida. El resultado incluye puntaje, duración activa (sin pausas), ingredientes cortados, mejor racha y cortes de bonus.
 

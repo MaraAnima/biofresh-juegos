@@ -1,4 +1,4 @@
-Compartí este mensaje junto con la configuración propia del juego. El SDK **1.0.1** está disponible en el enlace indicado y dentro del ZIP de integración; actualizá cualquier copia anterior para incorporar la corrección de conexión desde archivos locales.
+Compartí este mensaje junto con la configuración propia del juego. Usá el SDK **1.1.0** de este paquete: anticipa la conexión y confirma cada envío sin esperar toda la cola. Conserva la compatibilidad con archivos locales. Reemplazá cualquier copia anterior de `platform-sdk.js`.
 
 ---
 
@@ -12,7 +12,7 @@ Pedime la configuración de mi juego: `endpoint`, `gameKey`, `brandId`, `brandNa
 Implementá:
 
 1. Un primer paso obligatorio con nombre y celular, antes de las instrucciones y de jugar. Mostrá que se registrarán esos datos y los resultados. Normalizá el teléfono al formato internacional; por defecto Uruguay, con opción de ingresar otro prefijo. No agregues suscripciones de marketing ni digas que el celular fue verificado por SMS.
-2. Cargá el SDK, creá `GameHub.Client(config)` y enviá `registration`. No habilites jugar hasta recibir `ok:true` de la central en producción. Si hay un modo local de prueba, indicalo explícitamente y no lo marques como guardado.
+2. Cargá el SDK y creá `GameHub.Client(config)` apenas abra el juego, para preparar la conexión mientras se completan los datos. Enviá `registration` y mostrá las instrucciones de inmediato, mientras esperás la respuesta. No habilites jugar hasta recibir `ok:true` de la central en producción. Si hay un modo local de prueba, indicalo explícitamente y no lo marques como guardado. Usá `client.onReceipt` para actualizar resultados que se confirmen durante un reintento en segundo plano.
 3. Usá un `sessionId` por participación y un `runId` nuevo por ronda. Enviá `game_started` y después `game_completed` o `game_abandoned`. La misma ronda debe conservar el mismo `runId`.
 4. Enviá la marca, el juego, su versión, el nombre y el celular del participante, la fecha ISO UTC y métricas como `score`, `durationSeconds` y `finishReason`. El SDK agrega `schemaVersion:1` y `eventId`. El servidor toma los nombres comerciales definitivos de su catálogo.
 5. Usá el puente del SDK y sus confirmaciones reales. No uses `fetch` con `no-cors`, no marques una respuesta opaca como éxito y no mandes celulares o nombres por query strings. Mantené el `eventId` y todo el contenido al reintentar un envío.

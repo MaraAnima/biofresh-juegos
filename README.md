@@ -8,6 +8,8 @@ Abrí [`outputs/Biofresh-Fresh-Slice.html`](outputs/Biofresh-Fresh-Slice.html) e
 
 Para modificar el juego, trabajá en [`outputs/biofresh-fresh-slice/`](outputs/biofresh-fresh-slice/). También podés abrir su `index.html` conservando la estructura de carpetas.
 
+Con el SDK **1.1.0**, la conexión se prepara al abrir el juego. Al completar nombre y celular, las instrucciones aparecen de inmediato mientras se registra la participación. El inicio de la ronda requiere la confirmación real. Los resultados se envían en segundo plano y muestran su estado sin detener el juego.
+
 ### Probar sin enviar datos
 
 En `outputs/biofresh-fresh-slice/platform-config.js`, dejá `endpoint` y `gameKey` vacíos y cambiá `allowPreview` a `true`. Después ejecutá `npm run build`. La pantalla indica modo de prueba y no confirma guardados reales. Restaurá la configuración de producción antes de distribuir esa versión.

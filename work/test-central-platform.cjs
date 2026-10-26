@@ -1,19 +1,21 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert'),crypto=require('crypto');
 const dir=path.resolve(__dirname,'../outputs/central-juegos');
+const operations=[];
 class Range{
   constructor(sheet,row,col,rows=1,cols=1){Object.assign(this,{sheet,row,col,rows,cols});}
-  getValues(){return Array.from({length:this.rows},(_,r)=>Array.from({length:this.cols},(_,c)=>this.sheet.data[this.row+r-1]?.[this.col+c-1]??''));}
+  getValues(){operations.push('read');return Array.from({length:this.rows},(_,r)=>Array.from({length:this.cols},(_,c)=>this.sheet.data[this.row+r-1]?.[this.col+c-1]??''));}
   getValue(){return this.getValues()[0][0];}
-  setValues(values){values.forEach((row,r)=>row.forEach((value,c)=>{(this.sheet.data[this.row+r-1]||=[])[this.col+c-1]=value;}));return this;}
+  setValues(values){operations.push('write');values.forEach((row,r)=>row.forEach((value,c)=>{(this.sheet.data[this.row+r-1]||=[])[this.col+c-1]=value;}));return this;}
   setBackground(){return this;}setFontColor(){return this;}setFontWeight(){return this;}
-  createTextFinder(value){const range=this;return{matchEntireCell(){return this;},useRegularExpression(){return this;},findNext(){for(let r=0;r<range.rows;r++){if(String(range.sheet.data[range.row+r-1]?.[range.col-1])===value)return{getRow:()=>range.row+r};}return null;}};}
+  createTextFinder(value){operations.push('search');const range=this;return{matchEntireCell(){return this;},useRegularExpression(){return this;},findNext(){for(let r=0;r<range.rows;r++){if(String(range.sheet.data[range.row+r-1]?.[range.col-1])===value)return{getRow:()=>range.row+r};}return null;}};}
 }
-class Sheet{constructor(){this.data=[];}getRange(...args){return new Range(this,...args);}getLastRow(){return this.data.length;}appendRow(row){this.data.push([...row]);}setFrozenRows(){}}
-const sheets=new Map(),props=new Map();let busy=false;
+class Sheet{constructor(){this.data=[];}getRange(...args){return new Range(this,...args);}getLastRow(){operations.push('read');return this.data.length;}appendRow(row){operations.push('write');this.data.push([...row]);}setFrozenRows(){}}
+const sheets=new Map(),props=new Map(),rowCache=new Map();let busy=false,cacheUnavailable=false;
 const book={getId:()=> 'local-test-book',getUrl:()=> 'https://docs.google.com/spreadsheets/d/local-test-book/edit',setSpreadsheetTimeZone(){},getSheetByName:n=>sheets.get(n),insertSheet:n=>{const sheet=new Sheet();sheets.set(n,sheet);return sheet;}};
 const server={console:{log(){}},Date,JSON,Math,Number,String,Error,Array,Object,
-  PropertiesService:{getScriptProperties:()=>({getProperty:k=>props.get(k)||null,setProperty:(k,v)=>{props.set(k,v);}})},
-  SpreadsheetApp:{create:()=>book,openById:()=>book,flush(){}},
+  PropertiesService:{getScriptProperties:()=>({getProperties:()=>Object.fromEntries(props),getProperty:k=>props.get(k)||null,setProperty:(k,v)=>{props.set(k,v);}})},
+  SpreadsheetApp:{create:()=>book,openById:()=>book,flush(){operations.push('flush');}},
+  CacheService:{getScriptCache:()=>({get:key=>{if(cacheUnavailable)throw new Error('cache offline');return rowCache.get(key)||null;},put:(key,value)=>{if(cacheUnavailable)throw new Error('cache offline');rowCache.set(key,value);}})},
   ScriptApp:{getScriptId:()=> 'test-script',getService:()=>({getUrl:()=> 'https://script.google.com/macros/s/TEST_DEPLOYMENT/exec'})},
   LockService:{getScriptLock:()=>{let held=false;return{waitLock(){held=true;},tryLock(){held=!busy;return held;},hasLock:()=>held,releaseLock(){held=false;}};}},
   Utilities:{getUuid:()=>crypto.randomUUID(),DigestAlgorithm:{SHA_256:'SHA_256'},Charset:{UTF_8:'UTF_8'},computeDigest:(_,text)=>[...crypto.createHash('sha256').update(text).digest()],computeHmacSha256Signature:(text,key)=>[...crypto.createHmac('sha256',key).update(text).digest()]},
@@ -32,7 +34,10 @@ assert.strictEqual(sheets.get('Eventos').data[1][5],'Biofresh');assert.strictEqu
 assert.strictEqual(sheets.get('Participantes').data[1][1],"'+59899123456",'El celular debe escribirse como texto seguro');
 assert.strictEqual(server.recibirEvento({...registration,participant:{...participant,name:'Otra persona'}}).error.code,'EVENT_CONFLICT');
 assert.strictEqual(server.recibirEvento(event('game_started')).ok,true);
+operations.length=0;
 assert.strictEqual(server.recibirEvento(event('game_completed',{metrics:{score:70,durationSeconds:35,finishReason:'time'}})).ok,true);
+assert.strictEqual(operations.filter(x=>x==='search').length,1,'Con la caché preparada solo debe buscarse el nuevo ID de evento');
+assert(!operations.slice(operations.indexOf('write')).includes('read'),'Todas las lecturas deben terminar antes de las escrituras');
 assert.strictEqual(server.recibirEvento(event('game_started')).ok,true);
 assert.strictEqual(sheets.get('Partidas').data[1][10],'completada','Un inicio tardío no debe borrar el final');
 assert.strictEqual(sheets.get('Partidas').data[1][13],70);
@@ -46,6 +51,14 @@ assert.strictEqual(sheets.get('Participantes').data.length,2,'El mismo teléfono
 const unsafeName=event('registration',{participant:{name:'=HYPERLINK("x")',phone:'+59898123456'}});
 assert.strictEqual(server.recibirEvento(unsafeName).ok,true);
 assert(sheets.get('Participantes').data.at(-1)[2].startsWith("'="),'El nombre no debe convertirse en fórmula');
+const participantRows=sheets.get('Participantes').data;
+[participantRows[1],participantRows[2]]=[participantRows[2],participantRows[1]];
+assert.strictEqual(server.recibirEvento(event('registration')).ok,true,'Reordenar filas debe invalidar las pistas antiguas');
+assert.strictEqual(participantRows.length,3,'Una pista desactualizada no debe duplicar participantes');
+const catalog=sheets.get('Juegos').data;catalog[1][5]=false;
+assert.strictEqual(server.recibirEvento(event('registration')).error.code,'DISABLED_GAME','La caché no debe conservar permisos antiguos');catalog[1][5]=true;
+cacheUnavailable=true;assert.strictEqual(server.recibirEvento(event('registration')).ok,true,'El guardado debe funcionar sin caché');cacheUnavailable=false;
+assert([...rowCache.values()].every(value=>/^\d+$/.test(value)),'La caché solo debe guardar números de fila');
 const health=JSON.parse(server.doGet({parameter:{}}).value);assert(!JSON.stringify(health).includes(participant.phone));
 assert.strictEqual(JSON.parse(server.doPost({postData:{contents:'not-json'}}).value).ok,false);
 
@@ -77,6 +90,26 @@ async function checkBridgeOrigin(location,windowOrigin,expected){
   await checkBridgeOrigin({protocol:'file:',origin:'file://'},undefined,'null');
   await checkBridgeOrigin({protocol:'https:',origin:'https://game.example'},'https://game.example','https://game.example');
   await checkBridgeOrigin({protocol:'https:',origin:'https://game.example'},'null','null');
+  let releaseFirst,releaseSecond;
+  const isolated=new hub.Client(config,{storage:null,transport:payload=>new Promise(resolve=>{
+    const reply=()=>resolve({ok:true,eventId:payload.eventId});
+    if(!releaseFirst)releaseFirst=reply;else releaseSecond=reply;
+  })});
+  const isolatedFirst=isolated.event('game_started',{participant,sessionId:crypto.randomUUID(),runId:crypto.randomUUID(),metrics:{}});
+  const isolatedSecond=isolated.event('game_completed',{participant,sessionId:crypto.randomUUID(),runId:crypto.randomUUID(),metrics:{}});
+  const firstAck=isolated.send(isolatedFirst),secondAck=isolated.send(isolatedSecond);
+  await Promise.resolve();await Promise.resolve();releaseFirst();
+  assert.strictEqual((await firstAck).eventId,isolatedFirst.eventId,'Cada envío debe resolverse con su confirmación, sin esperar toda la cola');
+  assert.strictEqual(isolated.queue.length,1);releaseSecond();await secondAck;
+  const order=[];
+  const priority=new hub.Client(config,{storage:null,transport:async payload=>{order.push(payload.eventId);return{ok:true,eventId:payload.eventId};}});
+  priority.queue.push({queuedAt:Date.now(),event:isolatedSecond});
+  const incoming=priority.event('registration',{participant,sessionId:crypto.randomUUID(),metrics:{}});
+  await priority.send(incoming);await priority.flush();
+  assert.strictEqual(order[0],incoming.eventId,'Una inscripción nueva debe adelantarse a los envíos todavía sin iniciar');
+  const boundary=new hub.Client(config,{storage:null,transport:async payload=>({ok:true,eventId:payload.eventId})});
+  const boundaryResult=await boundary.send(isolatedFirst).then(()=>boundary.send(isolatedSecond));
+  assert.strictEqual(boundaryResult.eventId,isolatedSecond.eventId,'No debe quedar detenido un envío iniciado al recibir la confirmación anterior');
   let calls=0;const client=new hub.Client(config,{storage,transport:async payload=>{const response=server.recibirEvento(payload);if(++calls===1)throw new Error('lost acknowledgment');return response;}});
   const payload=client.event('registration',{participant,sessionId:crypto.randomUUID(),metrics:{}}),before=sheets.get('Eventos').data.length;
   await assert.rejects(client.send(payload));assert.strictEqual(client.queue.length,1);
@@ -93,8 +126,8 @@ async function checkBridgeOrigin(location,windowOrigin,expected){
 
   class Element{constructor(){this.hidden=true;this.value='';this.textContent='';this.listeners={};this.attributes={};}addEventListener(type,fn){this.listeners[type]=fn;}setAttribute(k,v){this.attributes[k]=v;}focus(){}emit(type){return this.listeners[type]({preventDefault(){}});}}
   const elements={};const get=id=>elements[id]||(elements[id]=new Element());
-  let fail=true;const sent=[];
-  class FormClient{constructor(){this.configured=true;this.preview=false;}event(type,details){return{eventId:crypto.randomUUID(),type,...details};}send(payload){sent.push(payload);return Promise.resolve(fail?{ok:false,error:{message:'Intentá nuevamente.'}}:{ok:true});}flush(){return Promise.resolve();}}
+  let fail=true,hold=false,releaseRegistration,formClient;const sent=[];
+  class FormClient{constructor(){this.configured=true;this.preview=false;formClient=this;}onReceipt(listener){this.listener=listener;}event(type,details){return{eventId:crypto.randomUUID(),type,...details};}send(payload){sent.push(payload);return hold?new Promise(resolve=>{releaseRegistration=resolve;}):Promise.resolve(fail?{ok:false,error:{message:'Intentá nuevamente.'}}:{ok:true});}flush(){return Promise.resolve();}}
   const browser={GameHub:{...hub,Client:FormClient},GAME_PLATFORM_CONFIG:{defaultCallingCode:'598'},dispatchEvent(){},setInterval(){}};
   const formContext={window:browser,document:{getElementById:get},CustomEvent:class{constructor(type){this.type=type;}},console};
   vm.runInNewContext(fs.readFileSync(path.resolve(dir,'../biofresh-fresh-slice/registration.js'),'utf8'),formContext);
@@ -107,5 +140,16 @@ async function checkBridgeOrigin(location,windowOrigin,expected){
   browser.BIOFRESH_REGISTRATION.startRun();browser.BIOFRESH_REGISTRATION.complete({score:55,durationSeconds:35});
   await Promise.resolve();assert.strictEqual(sent.at(-1).runId,sent.at(-2).runId);assert.strictEqual(sent.at(-1).metrics.score,55);
   get('changeParticipant').emit('click');assert.strictEqual(browser.BIOFRESH_REGISTRATION.isReady(),false);assert.strictEqual(get('participantPhone').value,'');
-  console.log('OK: servidor multijuego, formato de teléfono, fórmulas, catálogo, duplicados, estado final, confirmaciones, cola, origen del puente y registro obligatorio.');
+  hold=true;get('participantName').value='Otra prueba';get('participantPhone').value='098 123 456';
+  const submitting=get('participantForm').emit('submit');
+  assert.strictEqual(get('tutorialFlow').hidden,false,'El tutorial debe abrirse antes de recibir la respuesta');
+  assert.strictEqual(get('registrationPanel').hidden,true);
+  assert.strictEqual(browser.BIOFRESH_REGISTRATION.require(),false,'No se permite jugar hasta confirmar el registro');
+  assert.strictEqual(get('tutorialFlow').hidden,false,'Esperar el registro no debe sacar al usuario del tutorial');
+  releaseRegistration({ok:true});await submitting;hold=false;
+  assert.strictEqual(browser.BIOFRESH_REGISTRATION.isReady(),true);
+  browser.BIOFRESH_REGISTRATION.startRun();fail=true;browser.BIOFRESH_REGISTRATION.complete({score:10});await Promise.resolve();
+  const retryResult=sent.at(-1);formClient.listener({ok:true,eventId:retryResult.eventId});
+  assert.strictEqual(get('saveStatus').textContent,'Resultado guardado.','Una confirmación de reintento debe actualizar la pantalla final');
+  console.log('OK: servidor multijuego, lecturas agrupadas, caché verificada, privacidad, duplicados, confirmación por evento, tutorial inmediato y registro obligatorio.');
 })().catch(error=>{console.error(error);process.exitCode=1});

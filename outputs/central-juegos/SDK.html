@@ -22,7 +22,7 @@
   const trustedOrigin=origin=>/^https:\/\/(?:script\.google\.com|script\.googleusercontent\.com|[a-z0-9-]+-script\.googleusercontent\.com)$/.test(origin);
   class Client{
     constructor(config,options={}){
-      this.config=Object.assign({},config);this.receipts=new Map();this.pending=new Map();this.queue=[];
+      this.config=Object.assign({},config);this.receipts=new Map();this.pending=new Map();this.queue=[];this.deliveries=new Map();this.listeners=new Set();
       this.preview=!!config.allowPreview&&!config.endpoint&&!config.gameKey;
       this.configured=/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(config.endpoint||'')&&!!config.gameKey;
       this.transport=options.transport;this.storage=options.storage;
@@ -34,37 +34,56 @@
         root.addEventListener('message',e=>this._message(e));
         root.addEventListener('online',()=>this.flush().catch(()=>{}));
       }
+      if(this.configured&&!this.transport&&root.document?.body&&root.location)this.warmup().catch(()=>{});
     }
     event(type,details){
       return Object.assign({schemaVersion:1,eventId:uuid(),type,occurredAt:new Date().toISOString(),brandId:this.config.brandId,brandName:this.config.brandName,gameId:this.config.gameId,gameName:this.config.gameName,gameVersion:this.config.gameVersion||'1.0.0',gameKey:this.config.gameKey},details);
     }
     _save(){try{this.storage?.setItem(this.storageKey,JSON.stringify(this.queue));}catch(_){/* La recepción confirmada sigue funcionando sin almacenamiento local. */}}
+    warmup(){return this.configured&&!this.transport?this._connect():Promise.resolve();}
+    onReceipt(listener){this.listeners.add(listener);return()=>this.listeners.delete(listener);}
+    _receipt(response){
+      this.receipts.set(response.eventId,response);
+      const delivery=this.deliveries.get(response.eventId);this.deliveries.delete(response.eventId);delivery?.resolve(response);
+      for(const listener of this.listeners){try{listener(response);}catch(_){}}
+      if(this.receipts.size>100)this.receipts.delete(this.receipts.keys().next().value);
+    }
+    _failed(eventId,error){const delivery=this.deliveries.get(eventId);this.deliveries.delete(eventId);delivery?.reject(error);}
     async send(event){
       if(this.preview)return{ok:false,preview:true,eventId:event.eventId};
       if(!this.configured)throw new Error('La conexión central todavía no está configurada.');
       if(this.receipts.has(event.eventId))return this.receipts.get(event.eventId);
       if(!this.queue.some(x=>x.event.eventId===event.eventId)){
         if(this.queue.length>=80)throw new Error('Hay envíos pendientes. Volvé a intentar cuando se restablezca la conexión.');
-        this.queue.push({queuedAt:Date.now(),event:JSON.parse(JSON.stringify(event))});this._save();
+        const item={queuedAt:Date.now(),event:JSON.parse(JSON.stringify(event))};
+        // Una inscripción nueva no espera detrás de envíos antiguos todavía sin iniciar.
+        if(event.type==='registration')this.queue.splice(this.activeItem?1:0,0,item);else this.queue.push(item);
+        this._save();
       }
-      await this.flush();
-      return this.receipts.get(event.eventId)||{ok:false,pending:true,eventId:event.eventId};
+      let delivery=this.deliveries.get(event.eventId);
+      if(!delivery){delivery={};delivery.promise=new Promise((resolve,reject)=>Object.assign(delivery,{resolve,reject}));this.deliveries.set(event.eventId,delivery);}
+      const drain=()=>this.flush().then(()=>{
+        // También cubre un envío agregado justo cuando terminaba la cola anterior.
+        if(this.deliveries.get(event.eventId)===delivery)drain();
+      },error=>this._failed(event.eventId,error));
+      drain();return delivery.promise;
     }
     async flush(){
       if(!this.configured||!this.queue.length)return;
       if(this.flushing)return this.flushing;
-      this.flushing=(async()=>{
+      this.flushing=Promise.resolve().then(async()=>{
         while(this.queue.length){
           const item=this.queue[0];
-          if(item.queuedAt<Date.now()-TTL){this.receipts.set(item.event.eventId,{ok:false,eventId:item.event.eventId,error:{code:'EXPIRED',message:'El envío pendiente venció.',retryable:false}});this.queue.shift();this._save();continue;}
-          const response=this.transport?await this.transport(item.event):await this._request(item.event);
+          if(item.queuedAt<Date.now()-TTL){this.queue.shift();this._save();this._receipt({ok:false,eventId:item.event.eventId,error:{code:'EXPIRED',message:'El envío pendiente venció.',retryable:false}});continue;}
+          this.activeItem=item;
+          let response;
+          try{response=this.transport?await this.transport(item.event):await this._request(item.event);}finally{this.activeItem=null;}
           if(!response||response.eventId!==item.event.eventId||typeof response.ok!=='boolean')throw new Error('No se pudo confirmar el guardado.');
           if(!response.ok&&response.error?.retryable!==false)throw new Error('El servidor no pudo guardar los datos. Intentá nuevamente.');
-          this.receipts.set(item.event.eventId,response);this.queue.shift();this._save();
-          if(this.receipts.size>100)this.receipts.delete(this.receipts.keys().next().value);
+          this.queue.shift();this._save();this._receipt(response);
         }
-      })();
-      try{return await this.flushing;}finally{this.flushing=null;}
+      }).finally(()=>{this.flushing=null;});
+      return this.flushing;
     }
     async _connect(){
       if(this.bridgeWindow)return;
@@ -108,7 +127,7 @@
       });
     }
   }
-  root.GameHub={Client,uuid,normalizeName:name,normalizePhone:phone,version:'1.0.1'};
+  root.GameHub={Client,uuid,normalizeName:name,normalizePhone:phone,version:'1.1.0'};
 })(typeof window!=='undefined'?window:globalThis);
 
 </script>

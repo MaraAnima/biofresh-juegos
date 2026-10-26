@@ -1,6 +1,6 @@
 # Mensaje para integrar Puzzle de Biofresh
 
-La central ya está publicada. Integrá Puzzle a esta central, usando la configuración siguiente y el SDK común **1.0.1** incluido en el paquete o disponible en el enlace de SDK. Si ya integraste una copia anterior, actualizala: esta versión corrige la conexión desde archivos locales. No hace falta crear otro backend.
+La central ya está publicada. Integrá Puzzle a esta central, usando la configuración siguiente y el SDK común **1.1.0** incluido en el paquete. Si ya integraste una copia anterior, actualizala: prepara la conexión al abrir y confirma cada envío sin esperar el resto de la cola. Conserva la corrección de archivos locales. No hace falta crear otro backend.
 
 ```json
 {
@@ -23,7 +23,7 @@ SDK: https://script.google.com/macros/s/AKfycbyEasUVM53vQA3QbCkak3Zqg_pMYvFBLZlW
 Implementá:
 
 1. Un primer paso obligatorio con nombre y celular, antes de las instrucciones y de jugar. Mostrá que se registrarán esos datos y los resultados. Normalizá el teléfono al formato internacional; por defecto Uruguay, con opción de ingresar otro prefijo. No agregues suscripciones de marketing ni digas que el celular fue verificado por SMS.
-2. Cargá el SDK, creá `GameHub.Client(config)` y enviá `registration`. No habilites jugar hasta recibir `ok:true` de la central en producción. Si hay un modo local de prueba, indicalo explícitamente y no lo marques como guardado.
+2. Cargá el SDK y creá `GameHub.Client(config)` al abrir el juego. Tras validar los campos, enviá `registration` y mostrá las instrucciones de inmediato mientras esperás la respuesta. No habilites jugar hasta recibir `ok:true` de la central en producción. Si hay un modo local de prueba, indicalo explícitamente y no lo marques como guardado. Usá `client.onReceipt` para actualizar resultados confirmados por reintentos en segundo plano.
 3. Usá un `sessionId` por participación y un `runId` nuevo por ronda. Enviá `game_started` y después `game_completed` o `game_abandoned`. La misma ronda debe conservar el mismo `runId`.
 4. Enviá la marca, el juego, su versión, el nombre y el celular del participante, la fecha ISO UTC y métricas como `score`, `durationSeconds` y `finishReason`. El SDK agrega `schemaVersion:1` y `eventId`. El servidor toma los nombres comerciales definitivos de su catálogo.
 5. Usá el puente del SDK y sus confirmaciones reales. No uses `fetch` con `no-cors`, no marques una respuesta opaca como éxito y no mandes celulares o nombres por query strings. Mantené el `eventId` y todo el contenido al reintentar un envío.

@@ -2,12 +2,13 @@
   'use strict';
   const hub=window.GameHub,config=window.GAME_PLATFORM_CONFIG,client=new hub.Client(config);
   const get=id=>document.getElementById(id),form=get('participantForm'),nameInput=get('participantName'),phoneInput=get('participantPhone');
-  const status=get('registrationStatus'),button=get('registrationContinue'),saveStatus=get('saveStatus');
-  let current=null,candidate=null,activeRun=null,lastResultId=null,busy=false;
+  const status=get('registrationStatus'),syncStatus=get('registrationSyncStatus'),button=get('registrationContinue'),saveStatus=get('saveStatus');
+  let current=null,candidate=null,activeRun=null,lastResultId=null,lastResultEventId=null,busy=false;
   get('registrationPreview').hidden=!client.preview;
   function showRegistration(){
     get('registrationPanel').hidden=false;get('tutorialFlow').hidden=true;get('changeParticipant').hidden=true;
     get('entryPanel').scrollTop=0;nameInput.focus({preventScroll:true});
+    syncStatus.hidden=true;
   }
   function fieldError(input,id,message){input.setAttribute('aria-invalid',message?'true':'false');get(id).textContent=message;}
   form.addEventListener('submit',async event=>{
@@ -22,15 +23,18 @@
       candidate={participant,sessionId,event:client.event('registration',{participant,sessionId,metrics:{}})};
     }
     busy=true;button.disabled=true;button.textContent='Registrando…';status.textContent=client.preview?'':'Estamos registrando tu participación…';
+    // El tutorial aparece de inmediato; jugar sigue requiriendo un registro confirmado.
+    get('registrationPanel').hidden=true;get('tutorialFlow').hidden=false;get('changeParticipant').hidden=false;get('changeParticipant').disabled=true;
+    syncStatus.hidden=client.preview;syncStatus.textContent=client.preview?'':'Preparando tu participación…';
+    get('entryPanel').scrollTop=0;get('tutorialHeading1').focus({preventScroll:true});
     try{
       const response=await client.send(candidate.event);
       if(!response.ok&&!response.preview)throw new Error(response.error?.message||'No pudimos confirmar tu registro. Intentá nuevamente.');
       current={participant:Object.assign({},candidate.participant),sessionId:candidate.sessionId};
-      get('registrationPanel').hidden=true;get('tutorialFlow').hidden=false;get('changeParticipant').hidden=false;
-      get('entryPanel').scrollTop=0;get('tutorialHeading1').focus({preventScroll:true});status.textContent='';
+      syncStatus.hidden=true;status.textContent='';
       window.dispatchEvent(new CustomEvent('gamehub:registered'));
-    }catch(error){status.textContent=error.message||'No pudimos confirmar tu registro. Intentá nuevamente.';}
-    finally{busy=false;button.disabled=false;button.innerHTML='Continuar <span aria-hidden="true">→</span>';}
+    }catch(error){showRegistration();status.textContent=error.message||'No pudimos confirmar tu registro. Intentá nuevamente.';}
+    finally{busy=false;button.disabled=false;get('changeParticipant').disabled=false;button.innerHTML='Continuar <span aria-hidden="true">→</span>';}
   });
   function send(type,run,metrics){
     return client.send(client.event(type,{participant:run.participant,sessionId:run.sessionId,runId:run.runId,metrics}));
@@ -40,23 +44,28 @@
     const run=activeRun;activeRun=null;lastResultId=run.runId;
     saveStatus.hidden=client.preview;
     saveStatus.textContent=client.preview?'':'Guardando resultado…';
-    send(type,run,metrics).then(response=>{
+    const event=client.event(type,{participant:run.participant,sessionId:run.sessionId,runId:run.runId,metrics});lastResultEventId=event.eventId;
+    client.send(event).then(response=>{
       if(lastResultId!==run.runId)return;
       saveStatus.textContent=response.ok?'Resultado guardado.':response.preview?'':'Resultado pendiente de envío.';
     }).catch(()=>{if(lastResultId===run.runId)saveStatus.textContent='Resultado pendiente de envío. Se reintentará con conexión.';});
   }
+  client.onReceipt?.(response=>{
+    if(response.eventId===lastResultEventId&&response.ok)saveStatus.textContent='Resultado guardado.';
+  });
   get('changeParticipant').addEventListener('click',()=>{
+    if(busy)return;
     if(activeRun)endRun('game_abandoned',{finishReason:'participant_changed'});
     current=null;candidate=null;nameInput.value='';phoneInput.value='';status.textContent='';
     window.dispatchEvent(new CustomEvent('gamehub:participant-changed'));showRegistration();
   });
   window.BIOFRESH_REGISTRATION={
     isReady:()=>!!current,
-    require:()=>{if(!current)showRegistration();return!!current;},
+    require:()=>{if(!current){if(busy){syncStatus.hidden=false;syncStatus.textContent='Estamos terminando de preparar tu participación…';}else showRegistration();}return!!current;},
     startRun(){
       if(!current)return false;
       activeRun={participant:Object.assign({},current.participant),sessionId:current.sessionId,runId:hub.uuid()};
-      lastResultId=null;saveStatus.hidden=true;
+      lastResultId=null;lastResultEventId=null;saveStatus.hidden=true;
       send('game_started',activeRun,{}).catch(()=>{});return true;
     },
     complete:metrics=>endRun('game_completed',metrics),
