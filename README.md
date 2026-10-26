@@ -8,7 +8,7 @@ Abrí [`outputs/Biofresh-Fresh-Slice.html`](outputs/Biofresh-Fresh-Slice.html) e
 
 Para modificar el juego, trabajá en [`outputs/biofresh-fresh-slice/`](outputs/biofresh-fresh-slice/). También podés abrir su `index.html` conservando la estructura de carpetas.
 
-Con el SDK **1.1.0**, la conexión se prepara al abrir el juego. Al completar nombre y celular, las instrucciones aparecen de inmediato mientras se registra la participación. El inicio de la ronda requiere la confirmación real. Los resultados se envían en segundo plano y muestran su estado sin detener el juego.
+En **Fresh Slice 1.1.1**, nombre y celular válidos habilitan las instrucciones y la ronda inmediatamente. El SDK **1.1.0** prepara la conexión al abrir y envía registro, inicio y resultado en segundo plano. Una demora o un corte de red no devuelve al participante al formulario ni interrumpe la ronda. Solo se muestra «Resultado guardado» después de una confirmación real; mientras tanto se indica pendiente.
 
 ### Probar sin enviar datos
 

@@ -127,14 +127,15 @@ async function checkBridgeOrigin(location,windowOrigin,expected){
   class Element{constructor(){this.hidden=true;this.value='';this.textContent='';this.listeners={};this.attributes={};}addEventListener(type,fn){this.listeners[type]=fn;}setAttribute(k,v){this.attributes[k]=v;}focus(){}emit(type){return this.listeners[type]({preventDefault(){}});}}
   const elements={};const get=id=>elements[id]||(elements[id]=new Element());
   let fail=true,hold=false,releaseRegistration,formClient;const sent=[];
-  class FormClient{constructor(){this.configured=true;this.preview=false;formClient=this;}onReceipt(listener){this.listener=listener;}event(type,details){return{eventId:crypto.randomUUID(),type,...details};}send(payload){sent.push(payload);return hold?new Promise(resolve=>{releaseRegistration=resolve;}):Promise.resolve(fail?{ok:false,error:{message:'Intentá nuevamente.'}}:{ok:true});}flush(){return Promise.resolve();}}
+  class FormClient{constructor(){this.configured=true;this.preview=false;formClient=this;}onReceipt(listener){this.listener=listener;}event(type,details){return{eventId:crypto.randomUUID(),type,...details};}send(payload){sent.push(payload);return hold&&payload.type==='registration'?new Promise(resolve=>{releaseRegistration=resolve;}):Promise.resolve(fail?{ok:false,error:{message:'Intentá nuevamente.'}}:{ok:true});}flush(){return Promise.resolve();}}
   const browser={GameHub:{...hub,Client:FormClient},GAME_PLATFORM_CONFIG:{defaultCallingCode:'598'},dispatchEvent(){},setInterval(){}};
   const formContext={window:browser,document:{getElementById:get},CustomEvent:class{constructor(type){this.type=type;}},console};
   vm.runInNewContext(fs.readFileSync(path.resolve(dir,'../biofresh-fresh-slice/registration.js'),'utf8'),formContext);
   assert.strictEqual(browser.BIOFRESH_REGISTRATION.isReady(),false);
   await get('participantForm').emit('submit');assert.strictEqual(sent.length,0,'No se deben enviar campos vacíos');
   get('participantName').value='Usuario de prueba';get('participantPhone').value='099 123 456';
-  await get('participantForm').emit('submit');assert.strictEqual(browser.BIOFRESH_REGISTRATION.isReady(),false,'Un registro rechazado no habilita jugar');
+  await get('participantForm').emit('submit');assert.strictEqual(browser.BIOFRESH_REGISTRATION.isReady(),true,'Los datos válidos habilitan jugar aunque el envío no esté confirmado');
+  assert.strictEqual(get('registrationPanel').hidden,true,'Un fallo de red no devuelve al participante al formulario');
   fail=false;await get('participantForm').emit('submit');assert.strictEqual(sent[0].eventId,sent[1].eventId,'Reintentar el formulario conserva el envío');
   assert.strictEqual(browser.BIOFRESH_REGISTRATION.isReady(),true);assert.strictEqual(get('tutorialFlow').hidden,false);
   browser.BIOFRESH_REGISTRATION.startRun();browser.BIOFRESH_REGISTRATION.complete({score:55,durationSeconds:35});
@@ -144,12 +145,44 @@ async function checkBridgeOrigin(location,windowOrigin,expected){
   const submitting=get('participantForm').emit('submit');
   assert.strictEqual(get('tutorialFlow').hidden,false,'El tutorial debe abrirse antes de recibir la respuesta');
   assert.strictEqual(get('registrationPanel').hidden,true);
-  assert.strictEqual(browser.BIOFRESH_REGISTRATION.require(),false,'No se permite jugar hasta confirmar el registro');
-  assert.strictEqual(get('tutorialFlow').hidden,false,'Esperar el registro no debe sacar al usuario del tutorial');
+  assert.strictEqual(browser.BIOFRESH_REGISTRATION.require(),true,'Jugar no debe esperar la respuesta del registro');
+  assert.strictEqual(browser.BIOFRESH_REGISTRATION.startRun(),true,'La ronda arranca con la inscripción todavía en vuelo');
+  browser.BIOFRESH_REGISTRATION.complete({score:42});
+  assert.strictEqual(sent.at(-1).runId,sent.at(-2).runId,'Los eventos mantienen la partida aunque el registro esté pendiente');
+  assert.strictEqual(get('tutorialFlow').hidden,false,'El registro pendiente no debe interrumpir el juego');
   releaseRegistration({ok:true});await submitting;hold=false;
   assert.strictEqual(browser.BIOFRESH_REGISTRATION.isReady(),true);
   browser.BIOFRESH_REGISTRATION.startRun();fail=true;browser.BIOFRESH_REGISTRATION.complete({score:10});await Promise.resolve();
   const retryResult=sent.at(-1);formClient.listener({ok:true,eventId:retryResult.eventId});
   assert.strictEqual(get('saveStatus').textContent,'Resultado guardado.','Una confirmación de reintento debe actualizar la pantalla final');
-  console.log('OK: servidor multijuego, lecturas agrupadas, caché verificada, privacidad, duplicados, confirmación por evento, tutorial inmediato y registro obligatorio.');
+  hold=true;fail=false;get('changeParticipant').emit('click');get('participantName').value='Persona anterior';get('participantPhone').value='097 123 456';
+  const oldSubmission=get('participantForm').emit('submit'),releaseOld=releaseRegistration;
+  get('changeParticipant').emit('click');get('participantName').value='Persona actual';get('participantPhone').value='096 123 456';
+  const newSubmission=get('participantForm').emit('submit'),releaseNew=releaseRegistration;
+  releaseOld({ok:false,error:{message:'Fallo antiguo.'}});await oldSubmission;
+  assert.strictEqual(browser.BIOFRESH_REGISTRATION.isReady(),true,'Una respuesta antigua no revoca a la persona actual');
+  assert.strictEqual(get('registrationPanel').hidden,true);
+  releaseNew({ok:true});await newSubmission;hold=false;
+
+  // Formulario, SDK real y servidor simulado con la conexión detenida hasta después de jugar.
+  const liveElements={},liveGet=id=>liveElements[id]||(liveElements[id]=new Element());
+  let releaseNetwork,integratedClient;
+  const gate=new Promise(resolve=>{releaseNetwork=resolve;});
+  class ConnectedClient extends hub.Client{constructor(){super(config,{storage:null,transport:async payload=>{await gate;return server.recibirEvento(payload);}});integratedClient=this;}}
+  const integratedBrowser={GameHub:{...hub,Client:ConnectedClient},GAME_PLATFORM_CONFIG:{...config,defaultCallingCode:'598'},dispatchEvent(){},setInterval(){}};
+  vm.runInNewContext(fs.readFileSync(path.resolve(dir,'../biofresh-fresh-slice/registration.js'),'utf8'),{window:integratedBrowser,document:{getElementById:liveGet},CustomEvent:class{},console});
+  liveGet('participantName').value='Prueba sin espera';liveGet('participantPhone').value='095 123 456';
+  const waitingSubmission=liveGet('participantForm').emit('submit');
+  assert(integratedBrowser.BIOFRESH_REGISTRATION.startRun());
+  integratedBrowser.BIOFRESH_REGISTRATION.complete({score:321,durationSeconds:35});
+  const queued=integratedClient.queue.map(item=>item.event);
+  assert.deepStrictEqual(queued.map(item=>item.type),['registration','game_started','game_completed']);
+  assert.strictEqual(queued[0].sessionId,queued[2].sessionId);assert.strictEqual(queued[1].runId,queued[2].runId);
+  assert.notStrictEqual(liveGet('saveStatus').textContent,'Resultado guardado.','Sin respuesta no debe afirmarse que el resultado se guardó');
+  releaseNetwork();await waitingSubmission;await integratedClient.flush();await Promise.resolve();
+  assert.strictEqual(integratedClient.queue.length,0);
+  assert.strictEqual(liveGet('saveStatus').textContent,'Resultado guardado.');
+  const savedRun=sheets.get('Partidas').data.find(row=>row[1]===queued[2].runId);
+  assert.strictEqual(savedRun[10],'completada');assert.strictEqual(savedRun[13],321);
+  console.log('OK: servidor multijuego, caché verificada, privacidad, reintentos, campos obligatorios y partida inmediata con registro e inicio/resultado en cola.');
 })().catch(error=>{console.error(error);process.exitCode=1});

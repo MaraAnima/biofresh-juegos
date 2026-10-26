@@ -63,11 +63,10 @@ const participant = {
 };
 const sessionId = GameHub.uuid();
 const registration = client.event('registration', { participant, sessionId, metrics: {} });
-const ack = await client.send(registration);
-if (!ack.ok) throw new Error('No hay registro confirmado');
-// Recién ahora permitir jugar.
+client.send(registration).catch(() => { /* Mostrar registro pendiente sin interrumpir la partida. */ });
+// Nombre y celular válidos ya permiten mostrar las instrucciones y jugar.
 const runId = GameHub.uuid();
-await client.send(client.event('game_started', { participant, sessionId, runId, metrics: {} }));
+client.send(client.event('game_started', { participant, sessionId, runId, metrics: {} })).catch(() => {});
 await client.send(client.event('game_completed', {
   participant, sessionId, runId,
   metrics: { score: puntajeFinal, durationSeconds: segundosJugados, finishReason: 'time' }
@@ -78,11 +77,11 @@ Tipos admitidos: `registration`, `game_started`, `game_completed`, `game_abandon
 
 El SDK usa un iframe oculto con un nonce, verifica el origen de Google y la ventana de respuesta, y confirma la escritura con `google.script.run`. Sirve para juegos HTML locales y juegos alojados, sin poner datos personales en la URL y sin tratar una respuesta opaca como éxito. Las respuestas solo contienen confirmación e identificadores; el servidor no ofrece búsquedas públicas de personas.
 
-Los envíos no confirmados se guardan en **sessionStorage** de la pestaña con un límite de 80 y vencimiento de 6 horas. Se eliminan al confirmarse. Los reintentos automáticos de Fresh Slice ocurren con conexión cada 20 segundos. Cerrar definitivamente la pestaña puede eliminar esa cola; la inscripción en producción exige confirmación antes de jugar. No se promete entrega offline al cerrar la pestaña.
+Los envíos no confirmados se guardan en **sessionStorage** de la pestaña con un límite de 80 y vencimiento de 6 horas. Se eliminan al confirmarse. Los reintentos automáticos de Fresh Slice ocurren con conexión cada 20 segundos. Cerrar definitivamente la pestaña puede eliminar esa cola. Fresh Slice exige campos válidos antes de jugar y envía la inscripción en segundo plano; la confirmación de guardado se muestra por separado. No se promete entrega offline al cerrar la pestaña.
 
 ## Fresh Slice
 
-El primer paso pide nombre y celular, ambos obligatorios. Las instrucciones se abren inmediatamente después de validar esos campos, mientras llega la confirmación de registro. La ronda solo se habilita cuando la central confirma el registro; si falla, vuelve al formulario conservando los datos para reintentar. Con el país por defecto Uruguay, `099 123 456` se normaliza a formato `+598…`; para otros países, se ingresa el prefijo internacional. Es una validación de formato, no una verificación por SMS.
+El primer paso pide nombre y celular, ambos obligatorios. En Fresh Slice **1.1.1**, validarlos habilita las instrucciones y la ronda inmediatamente. Registro, inicio y resultado se encolan con sus identificadores y se envían en segundo plano. Una respuesta tardía o un fallo de registro no interrumpe la partida ni modifica a un participante nuevo. Un resultado no se marca guardado sin confirmación real. Con el país por defecto Uruguay, `099 123 456` se normaliza a formato `+598…`; para otros países, se ingresa el prefijo internacional. Es una validación de formato, no una verificación por SMS.
 
 El botón **Cambiar participante** limpia el formulario y crea una sesión nueva. Las repeticiones dentro de una misma participación conservan al participante y generan otra partida. El resultado incluye puntaje, duración activa (sin pausas), ingredientes cortados, mejor racha y cortes de bonus.
 

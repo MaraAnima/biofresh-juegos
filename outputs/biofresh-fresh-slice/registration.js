@@ -18,23 +18,28 @@
     try{name=hub.normalizeName(nameInput.value);}catch(error){fieldError(nameInput,'participantNameError',error.message);firstError=nameInput;}
     try{phone=hub.normalizePhone(phoneInput.value,config.defaultCallingCode);}catch(error){fieldError(phoneInput,'participantPhoneError',error.message);firstError=firstError||phoneInput;}
     if(firstError){firstError.focus();return;}
+    if(!client.configured&&!client.preview){status.textContent='La conexión central todavía no está configurada.';return;}
     if(!candidate||candidate.participant.name!==name||candidate.participant.phone!==phone){
       const participant={name,phone},sessionId=hub.uuid();
       candidate={participant,sessionId,event:client.event('registration',{participant,sessionId,metrics:{}})};
     }
-    busy=true;button.disabled=true;button.textContent='Registrando…';status.textContent=client.preview?'':'Estamos registrando tu participación…';
-    // El tutorial aparece de inmediato; jugar sigue requiriendo un registro confirmado.
-    get('registrationPanel').hidden=true;get('tutorialFlow').hidden=false;get('changeParticipant').hidden=false;get('changeParticipant').disabled=true;
-    syncStatus.hidden=client.preview;syncStatus.textContent=client.preview?'':'Preparando tu participación…';
+    const attempt=candidate;
+    busy=true;
+    // La validación local habilita jugar; la confirmación de guardado llega por separado.
+    current={participant:Object.assign({},attempt.participant),sessionId:attempt.sessionId,registrationEventId:attempt.event.eventId,registrationConfirmed:false};
+    get('registrationPanel').hidden=true;get('tutorialFlow').hidden=false;get('changeParticipant').hidden=false;
+    syncStatus.hidden=client.preview;syncStatus.textContent=client.preview?'':'Podés jugar. Tu registro se está enviando.';
     get('entryPanel').scrollTop=0;get('tutorialHeading1').focus({preventScroll:true});
+    busy=false;
+    window.dispatchEvent(new CustomEvent('gamehub:registered'));
     try{
-      const response=await client.send(candidate.event);
-      if(!response.ok&&!response.preview)throw new Error(response.error?.message||'No pudimos confirmar tu registro. Intentá nuevamente.');
-      current={participant:Object.assign({},candidate.participant),sessionId:candidate.sessionId};
-      syncStatus.hidden=true;status.textContent='';
-      window.dispatchEvent(new CustomEvent('gamehub:registered'));
-    }catch(error){showRegistration();status.textContent=error.message||'No pudimos confirmar tu registro. Intentá nuevamente.';}
-    finally{busy=false;button.disabled=false;get('changeParticipant').disabled=false;button.innerHTML='Continuar <span aria-hidden="true">→</span>';}
+      const response=await client.send(attempt.event);
+      if(current?.registrationEventId!==attempt.event.eventId)return;
+      if(response.ok||response.preview){current.registrationConfirmed=!!response.ok;syncStatus.hidden=true;status.textContent='';}
+      else{syncStatus.hidden=false;syncStatus.textContent=response.error?.retryable===false?'No se pudo guardar el registro. '+(response.error.message||'Revisá la configuración.'):'Registro pendiente de envío. Podés seguir jugando.';}
+    }catch(_){
+      if(current?.registrationEventId===attempt.event.eventId){syncStatus.hidden=false;syncStatus.textContent='Registro pendiente de envío. Podés seguir jugando.';}
+    }
   });
   function send(type,run,metrics){
     return client.send(client.event(type,{participant:run.participant,sessionId:run.sessionId,runId:run.runId,metrics}));
@@ -51,6 +56,7 @@
     }).catch(()=>{if(lastResultId===run.runId)saveStatus.textContent='Resultado pendiente de envío. Se reintentará con conexión.';});
   }
   client.onReceipt?.(response=>{
+    if(response.eventId===current?.registrationEventId&&response.ok){current.registrationConfirmed=true;syncStatus.hidden=true;status.textContent='';}
     if(response.eventId===lastResultEventId&&response.ok)saveStatus.textContent='Resultado guardado.';
   });
   get('changeParticipant').addEventListener('click',()=>{
@@ -61,7 +67,7 @@
   });
   window.BIOFRESH_REGISTRATION={
     isReady:()=>!!current,
-    require:()=>{if(!current){if(busy){syncStatus.hidden=false;syncStatus.textContent='Estamos terminando de preparar tu participación…';}else showRegistration();}return!!current;},
+    require:()=>{if(!current)showRegistration();return!!current;},
     startRun(){
       if(!current)return false;
       activeRun={participant:Object.assign({},current.participant),sessionId:current.sessionId,runId:hub.uuid()};

@@ -1,6 +1,6 @@
 {
   "name": "biofresh-juegos",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Fresh Slice y central de juegos con Google Sheets y Apps Script",
   "license": "UNLICENSED",
