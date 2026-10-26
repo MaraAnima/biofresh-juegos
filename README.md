@@ -73,6 +73,14 @@ De **Puzzle** se incluye su configuración y [prompt específico](outputs/centra
 
 ## Configuración y publicación
 
+### Vercel
+
+El proyecto incluye `vercel.json` para construir Fresh Slice y publicar `outputs/biofresh-fresh-slice/`. Conectá el proyecto de Vercel con **MaraAnima/biofresh-juegos**, rama de producción **main**, y dejá **Root Directory** en la raíz del repositorio. Los próximos pushes a esa rama podrán publicar la versión actual del juego automáticamente. No subas una copia antigua de la carpeta por separado.
+
+Después de publicar, verificá `platform-config.js` en el dominio del juego: `gameVersion` debe coincidir con la configuración del repositorio. La publicación corregida permite avanzar del registro enseguida y sincroniza los datos en segundo plano.
+
+### Apps Script
+
 - `central-juegos/shared-sdk.js` es la fuente del SDK; sus copias se generan con `npm run build`.
 - `biofresh-fresh-slice/platform-config.js` es la configuración de Fresh Slice.
 - `central-juegos/config-puzzle.js` contiene la configuración de Puzzle.
