@@ -7,7 +7,7 @@ const base=path.resolve(__dirname,'../outputs/biofresh-fresh-slice');
 let source=fs.readFileSync(path.join(base,'game.js'),'utf8');
 source=source.replace('  requestAnimationFrame(loop);\n})();',`  globalThis.__debug={get state(){return state},get score(){return score},get combo(){return combo},get comboPulse(){return comboPulse},get labels(){return labels},get objects(){return objects},get particles(){return particles},get splashes(){return splashes},get lives(){return lives},get remaining(){return remaining},get photoCount(){return photoSprites.size},get whipAudioBuffers(){return whipAudioBuffers},get bagSparkleBuffer(){return bagSparkleBuffer},loadIngredientPhotos,spawn,finishGame,update};\n  requestAnimationFrame(loop);\n})();`);
 assert(source.includes('globalThis.__debug'));
-async function environment(width,height,fullscreenSupported=true){
+async function environment(width,height,fullscreenSupported=true,compatibility={}){
   let clock=0,fullscreenRequests=0,audioStarts=0,audioResumes=0;const frames=[],storage={},elements={},audioVoices=[];
   const audioParam=()=>({value:0,setValueAtTime(value){this.value=value;},exponentialRampToValueAtTime(){},linearRampToValueAtTime(){}});
   const audioNode=()=>({gain:audioParam(),frequency:audioParam(),Q:audioParam(),pan:audioParam(),playbackRate:audioParam(),connect(){},disconnect(){},start(time){this.startedAt=time;audioVoices.push(this);audioStarts++;},stop(time){this.stoppedAt=time;}});
@@ -21,7 +21,7 @@ async function environment(width,height,fullscreenSupported=true){
     createBiquadFilter(){return audioNode();}
     createStereoPanner(){return audioNode();}
   }
-  const context=()=>new Proxy({createRadialGradient:()=>({addColorStop(){}}),createLinearGradient:()=>({addColorStop(){}})},{get:(target,key)=>target[key]||(()=>{}),set:(target,key,value)=>(target[key]=value,true)});
+  const context=()=>new Proxy({createRadialGradient:()=>({addColorStop(){}}),createLinearGradient:()=>({addColorStop(){}})},{get:(target,key)=>key==='roundRect'&&compatibility.noRoundRect?undefined:target[key]||(()=>{}),set:(target,key,value)=>(target[key]=value,true)});
   class Element{
     constructor(id){this.id=id;this.listeners={};this.attributes={};this.classes=new Set();this.hidden=false;this.inert=false;this.textContent='';this.innerHTML='';this.ctx=context();this.children=[];this.classList={add:x=>this.classes.add(x),remove:x=>this.classes.delete(x),toggle:(x,b)=>b?this.classes.add(x):this.classes.delete(x)};}
     getContext(){return this.ctx}
@@ -31,7 +31,7 @@ async function environment(width,height,fullscreenSupported=true){
     setAttribute(k,v){this.attributes[k]=v}
     appendChild(child){this.children.push(child)}
     querySelector(){return new Element('icon')}
-    setPointerCapture(){}
+    setPointerCapture(){if(compatibility.captureFailure)throw new Error('No active pointer available');}
     focus(){document.activeElement=this}
   }
   const ids=[...fs.readFileSync(path.join(base,'index.html'),'utf8').matchAll(/id="([^"]+)"/g)].map(m=>m[1]);
@@ -143,6 +143,15 @@ async function environment(width,height,fullscreenSupported=true){
     assert(uploadedPcm.equals(Buffer.from(sandbox.window.BIOFRESH_WHIP_SOUNDS.clips[clip],'base64')),'La variante debe usar el audio extraído de su video');
   }
   elements.gameCanvas.emit('pointerup');
+  const beforeSecondFinger=audioStarts;
+  elements.gameCanvas.emit('pointerdown',pointer(20,70));
+  elements.gameCanvas.emit('pointerdown',{...pointer(25,70),pointerId:2,isPrimary:false});
+  elements.gameCanvas.emit('pointermove',{...pointer(200,70),pointerId:2});
+  elements.gameCanvas.emit('pointerup',{pointerId:2});
+  assert.strictEqual(audioStarts,beforeSecondFinger,'Un segundo dedo no debe generar cortes ni sonidos');
+  clock+=20;elements.gameCanvas.emit('pointermove',pointer(60,70));
+  assert(audioStarts>beforeSecondFinger,'Levantar otro dedo no debe cancelar el corte principal');
+  elements.gameCanvas.emit('pointerup',{pointerId:1});
   elements.soundButton.emit('click');assert.strictEqual(elements.soundButton.attributes['aria-label'],'Activar sonido');
   const mutedStarts=audioStarts;
   elements.gameCanvas.emit('pointerdown',pointer(20,70));clock+=20;elements.gameCanvas.emit('pointermove',pointer(80,70));elements.gameCanvas.emit('pointerup');
@@ -231,4 +240,4 @@ async function environment(width,height,fullscreenSupported=true){
   if(fullscreenSupported){elements.fullscreenButton.emit('click');assert.strictEqual(document.fullscreenElement,null)}
   console.log(`OK ${width}×${height}: cartel de racha con rebote breve, niveles y puntos correctos, pausa y vencimiento, nueve sonidos, látigo, tutorial y jugo${fullscreenSupported?' con Fullscreen API':' con ajuste al viewport'}`);
 }
-(async()=>{await environment(1440,900);await environment(390,844,false)})().catch(error=>{console.error(error);process.exitCode=1});
+(async()=>{await environment(1440,900);await environment(390,844,false);await environment(375,667,false,{noRoundRect:true,captureFailure:true})})().catch(error=>{console.error(error);process.exitCode=1});

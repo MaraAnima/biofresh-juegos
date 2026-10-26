@@ -10,6 +10,8 @@ Para modificar el juego, trabajá en [`outputs/biofresh-fresh-slice/`](outputs/b
 
 En **Fresh Slice 1.1.1**, nombre y celular válidos habilitan las instrucciones y la ronda inmediatamente. El SDK **1.1.0** prepara la conexión al abrir y envía registro, inicio y resultado en segundo plano. Una demora o un corte de red no devuelve al participante al formulario ni interrumpe la ronda. Solo se muestra «Resultado guardado» después de una confirmación real; mientras tanto se indica pendiente.
 
+La revisión **1.1.2** agrega una alternativa cuando Canvas no ofrece `roundRect`, tolera errores de captura del toque y mantiene el corte principal al apoyar o levantar otro dedo. El lienzo evita el menú de pulsación larga. Las pruebas simulan esas capacidades ausentes en 375 × 667 y conservan los casos de escritorio y móvil; no sustituyen la comprobación del problema reportado en un iPhone real.
+
 ### Probar sin enviar datos
 
 En `outputs/biofresh-fresh-slice/platform-config.js`, dejá `endpoint` y `gameKey` vacíos y cambiá `allowPreview` a `true`. Después ejecutá `npm run build`. La pantalla indica modo de prueba y no confirma guardados reales. Restaurá la configuración de producción antes de distribuir esa versión.

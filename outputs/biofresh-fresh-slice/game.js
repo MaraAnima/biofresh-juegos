@@ -53,7 +53,7 @@
   let objects = [], fragments = [], particles = [], splashes = [], labels = [], trail = [];
   let specialBag=null,bagBonus=null,bagSpawnAt=Infinity,bagSparks=[],bagBurst=null,visualTime=0;
   let comboPulse=0;
-  let pointerActive = false, lastFrame = performance.now(), soundOn = true, audioContext = null;
+  let pointerActive = false, activePointerId = null, lastFrame = performance.now(), soundOn = true, audioContext = null;
   const WHIP_VARIANTS=[
     {duration:.26,peak:.4,low:450,high:3300,tail:850,q:.55,rate:.9,body:.55,crack:.14,snap:1900,texture:0},
     {duration:.18,peak:.35,low:950,high:6200,tail:2000,q:.9,rate:1.25,body:.44,crack:.34,snap:3400,texture:0},
@@ -816,14 +816,15 @@
     swipeDirection={x:turnVector.x/length,y:turnVector.y/length};turnVector=null;
   }
   canvas.addEventListener('pointerdown',e=>{
-    if(state!=='playing')return;
-    e.preventDefault();canvas.setPointerCapture(e.pointerId);pointerActive=true;
+    if(state!=='playing'||pointerActive||e.isPrimary===false||(e.button!==undefined&&e.button!==0))return;
+    e.preventDefault();pointerActive=true;activePointerId=e.pointerId;
+    try{canvas.setPointerCapture?.(e.pointerId);}catch(_){/* El corte sigue funcionando aunque Safari no pueda capturar este toque. */}
     resetSwipeSound();
     const p=pointerPosition(e),previousScore=score;lastPointer=p;trail=[p];checkSlice(p,p);
     if(score>previousScore){playWhip(950,p.x,p.x);swipeHasSound=true;}
   });
   canvas.addEventListener('pointermove',e=>{
-    if(!pointerActive||state!=='playing')return;
+    if(!pointerActive||state!=='playing'||e.pointerId!==activePointerId)return;
     e.preventDefault();const p=pointerPosition(e),old=lastPointer||p;
     const distance=Math.hypot(p.x-old.x,p.y-old.y);
     if(distance>2){
@@ -833,7 +834,19 @@
       trail.push(p);checkSlice(old,p);if(trail.length>18)trail.shift();
     }
   });
-  for(const type of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(type,()=>{pointerActive=false;lastPointer=null;if(specialBag)specialBag.contact=false;if(bagBonus)bagBonus.strokeTravel=0;});
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(type,e=>{
+    if(e.pointerId!==undefined&&e.pointerId!==activePointerId)return;
+    pointerActive=false;activePointerId=null;lastPointer=null;if(specialBag)specialBag.contact=false;if(bagBonus)bagBonus.strokeTravel=0;
+  });
+
+  function roundedRect(c,x,y,w,h,radius){
+    if(typeof c.roundRect==='function'){c.roundRect(x,y,w,h,radius);return;}
+    const r=Math.max(0,Math.min(radius,w/2,h/2));
+    c.moveTo(x+r,y);c.lineTo(x+w-r,y);c.quadraticCurveTo(x+w,y,x+w,y+r);
+    c.lineTo(x+w,y+h-r);c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+    c.lineTo(x+r,y+h);c.quadraticCurveTo(x,y+h,x,y+h-r);
+    c.lineTo(x,y+r);c.quadraticCurveTo(x,y,x+r,y);c.closePath();
+  }
 
   function update(dt){
     if(state!=='playing')return;
@@ -944,7 +957,7 @@
     ctx.save();ctx.globalAlpha=fade;
     ctx.translate(left+cardWidth/2,top+cardHeight/2);ctx.scale(pop,pop);
     ctx.shadowColor='#53361824';ctx.shadowBlur=12;ctx.shadowOffsetY=4;
-    ctx.beginPath();ctx.roundRect(-cardWidth/2,-cardHeight/2,cardWidth,cardHeight,12);ctx.fillStyle=STREAK_ORANGE;ctx.fill();
+    ctx.beginPath();roundedRect(ctx,-cardWidth/2,-cardHeight/2,cardWidth,cardHeight,12);ctx.fillStyle=STREAK_ORANGE;ctx.fill();
     ctx.shadowBlur=0;ctx.shadowOffsetY=0;ctx.fillStyle='#fff';ctx.font='700 '+(compact?20:25)+'px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('RACHA ×'+combo,0,1);
     ctx.restore();
   }
@@ -1005,15 +1018,15 @@
     const x=width*.5-cardWidth*.5,y=Math.min(height-cardHeight-22,Math.max(height*.79,geometry.y+extentY+23))+(1-geometry.focus)*10;
     const color=specialBag.spec.color,seconds=Math.max(0,Math.ceil(BAG_BONUS_SECONDS-bagBonus.age));
     ctx.save();ctx.globalAlpha=geometry.focus;ctx.shadowColor='#233c3029';ctx.shadowBlur=23;ctx.shadowOffsetY=8;
-    ctx.fillStyle='#fffffff2';ctx.beginPath();ctx.roundRect(x,y,cardWidth,cardHeight,17);ctx.fill();
+    ctx.fillStyle='#fffffff2';ctx.beginPath();roundedRect(ctx,x,y,cardWidth,cardHeight,17);ctx.fill();
     ctx.shadowBlur=0;ctx.shadowOffsetY=0;ctx.strokeStyle=color+'80';ctx.lineWidth=1.5;ctx.stroke();
     ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle='#335340';
     ctx.font='700 '+(compact?10:11)+'px Arial';ctx.fillText('BIOFRESH · CORTES SIN LÍMITE',x+17,y+20);
     ctx.font='700 '+(compact?25:29)+'px Arial';ctx.fillText(String(bagBonus.hits),x+17,y+47);
     ctx.font='700 '+(compact?10:11)+'px Arial';ctx.fillStyle='#63776a';ctx.fillText('CORTES',x+(compact?52:57),y+48);
     ctx.textAlign='right';ctx.font='700 '+(compact?25:29)+'px Arial';ctx.fillStyle=color;ctx.fillText(seconds+'s',x+cardWidth-18,y+47);
-    ctx.fillStyle='#e4ebe4';ctx.beginPath();ctx.roundRect(x+17,y+cardHeight-12,cardWidth-34,4,2);ctx.fill();
-    ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(x+17,y+cardHeight-12,(cardWidth-34)*Math.max(0,1-bagBonus.age/BAG_BONUS_SECONDS),4,2);ctx.fill();
+    ctx.fillStyle='#e4ebe4';ctx.beginPath();roundedRect(ctx,x+17,y+cardHeight-12,cardWidth-34,4,2);ctx.fill();
+    ctx.fillStyle=color;ctx.beginPath();roundedRect(ctx,x+17,y+cardHeight-12,(cardWidth-34)*Math.max(0,1-bagBonus.age/BAG_BONUS_SECONDS),4,2);ctx.fill();
     ctx.restore();
   }
   function drawBagEffects(){
